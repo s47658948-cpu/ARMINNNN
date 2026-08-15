@@ -306,10 +306,52 @@ export async function handler(event) {
     if (event.httpMethod === "GET" && action === "tickets-admin") return reply(200,{ok:true,tickets:await getTickets()});
     if (event.httpMethod === "POST" && action === "ticket-reply") {
       const id=String(body.id||""), text=String(body.message||"").trim();
+      const username=normalizeUsername(body.username);
+
       if(!id||!text) return reply(400,{ok:false,error:"پیام پاسخ الزامی است."});
-      const ticketRows=await db(`tickets?id=eq.${encodeURIComponent(id)}&limit=1`); if(!ticketRows?.length) return reply(404,{ok:false,error:"تیکت پیدا نشد."});
+
+      const ticketRows=await db(`tickets?id=eq.${encodeURIComponent(id)}&limit=1`);
+      if(!ticketRows?.length) return reply(404,{ok:false,error:"تیکت پیدا نشد."});
+
+      const ticket=ticketRows[0];
       const now=Date.now();
-      await db("ticket_messages",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({id:crypto.randomUUID(),ticket_id:id,sender:"admin",sender_name:ADMIN_USER,body:text,created_at:now})});
+
+      // پیام عضو به مدیریت (فقط داخل تیکت خودش)
+      if(username){
+        if(normalizeUsername(ticket.username)!==username)
+          return reply(403,{ok:false,error:"این تیکت متعلق به شما نیست."});
+
+        await db("ticket_messages",{
+          method:"POST",
+          headers:{Prefer:"return=representation"},
+          body:JSON.stringify({
+            id:crypto.randomUUID(),
+            ticket_id:id,
+            sender:"user",
+            sender_name:ticket.name || username,
+            body:text,
+            created_at:now
+          })
+        });
+
+        await db(`tickets?id=eq.${encodeURIComponent(id)}`,{
+          method:"PATCH",
+          body:JSON.stringify({status:"open",updated_at:now})
+        });
+
+        return reply(200,{ok:true,ticket:(await getTickets(username))[0]});
+      }
+
+      // پاسخ مدیریت
+      await db("ticket_messages",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({
+        id:crypto.randomUUID(),
+        ticket_id:id,
+        sender:"admin",
+        sender_name:ADMIN_USER,
+        body:text,
+        created_at:now
+      })});
+
       await db(`tickets?id=eq.${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({status:"answered",updated_at:now})});
       return reply(200,{ok:true,ticket:(await getTickets())[0]});
     }
