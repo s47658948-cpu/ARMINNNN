@@ -269,41 +269,6 @@ export async function handler(event) {
       return reply(200,{ok:true});
     }
 
-    if (!checkToken(event)) return reply(401, { ok: false, error: "دسترسی مدیریت لازم است." });
-
-    if (event.httpMethod === "GET" && action === "requests") return reply(200, { ok: true, requests: await getRequestsFor() });
-
-    if (event.httpMethod === "GET" && action === "stats") {
-      const requests = await getRequestsFor();
-      const members = await getMembers();
-      return reply(200, { ok: true, stats: {
-        totalRequests: requests.length,
-        pending: requests.filter(r => r.status === "pending").length,
-        approved: requests.filter(r => r.status === "approved").length,
-        rejected: requests.filter(r => r.status === "rejected").length,
-        members: members.length
-      }});
-    }
-
-
-    if (event.httpMethod === "POST" && action === "announcement-create") {
-      const title=String(body.title||"").trim(), text=String(body.body||"").trim();
-      if(!title||!text) return reply(400,{ok:false,error:"عنوان و متن اطلاعیه الزامی است."});
-      const row={id:crypto.randomUUID(),title,body:text,author:ADMIN_USER,created_at:Date.now(),published:true};
-      const out=await db("announcements",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify(row)});
-      return reply(201,{ok:true,announcement:mapAnnouncement(out?.[0]||row)});
-    }
-    if (event.httpMethod === "POST" && action === "announcement-update") {
-      const id=String(body.id||""), title=String(body.title||"").trim(), text=String(body.body||"").trim();
-      if(!id||!title||!text) return reply(400,{ok:false,error:"اطلاعات اطلاعیه کامل نیست."});
-      const out=await db(`announcements?id=eq.${encodeURIComponent(id)}`,{method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify({title,body:text})});
-      return reply(200,{ok:true,announcement:mapAnnouncement(out?.[0])});
-    }
-    if (event.httpMethod === "POST" && action === "announcement-delete") {
-      const id=String(body.id||""); if(!id) return reply(400,{ok:false,error:"شناسه اطلاعیه نامعتبر است."});
-      await db(`announcements?id=eq.${encodeURIComponent(id)}`,{method:"DELETE"}); return reply(200,{ok:true});
-    }
-    if (event.httpMethod === "GET" && action === "tickets-admin") return reply(200,{ok:true,tickets:await getTickets()});
     if (event.httpMethod === "POST" && action === "ticket-reply") {
       const id=String(body.id||""), text=String(body.message||"").trim();
       const username=normalizeUsername(body.username);
@@ -355,6 +320,42 @@ export async function handler(event) {
       await db(`tickets?id=eq.${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({status:"answered",updated_at:now})});
       return reply(200,{ok:true,ticket:(await getTickets())[0]});
     }
+
+    if (!checkToken(event)) return reply(401, { ok: false, error: "دسترسی مدیریت لازم است." });
+
+    if (event.httpMethod === "GET" && action === "requests") return reply(200, { ok: true, requests: await getRequestsFor() });
+
+    if (event.httpMethod === "GET" && action === "stats") {
+      const requests = await getRequestsFor();
+      const members = await getMembers();
+      return reply(200, { ok: true, stats: {
+        totalRequests: requests.length,
+        pending: requests.filter(r => r.status === "pending").length,
+        approved: requests.filter(r => r.status === "approved").length,
+        rejected: requests.filter(r => r.status === "rejected").length,
+        members: members.length
+      }});
+    }
+
+
+    if (event.httpMethod === "POST" && action === "announcement-create") {
+      const title=String(body.title||"").trim(), text=String(body.body||"").trim();
+      if(!title||!text) return reply(400,{ok:false,error:"عنوان و متن اطلاعیه الزامی است."});
+      const row={id:crypto.randomUUID(),title,body:text,author:ADMIN_USER,created_at:Date.now(),published:true};
+      const out=await db("announcements",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify(row)});
+      return reply(201,{ok:true,announcement:mapAnnouncement(out?.[0]||row)});
+    }
+    if (event.httpMethod === "POST" && action === "announcement-update") {
+      const id=String(body.id||""), title=String(body.title||"").trim(), text=String(body.body||"").trim();
+      if(!id||!title||!text) return reply(400,{ok:false,error:"اطلاعات اطلاعیه کامل نیست."});
+      const out=await db(`announcements?id=eq.${encodeURIComponent(id)}`,{method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify({title,body:text})});
+      return reply(200,{ok:true,announcement:mapAnnouncement(out?.[0])});
+    }
+    if (event.httpMethod === "POST" && action === "announcement-delete") {
+      const id=String(body.id||""); if(!id) return reply(400,{ok:false,error:"شناسه اطلاعیه نامعتبر است."});
+      await db(`announcements?id=eq.${encodeURIComponent(id)}`,{method:"DELETE"}); return reply(200,{ok:true});
+    }
+    if (event.httpMethod === "GET" && action === "tickets-admin") return reply(200,{ok:true,tickets:await getTickets()});
     if (event.httpMethod === "POST" && action === "ticket-close") {
       const id=String(body.id||""); if(!id) return reply(400,{ok:false,error:"شناسه تیکت نامعتبر است."});
       await db(`tickets?id=eq.${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({status:"closed",updated_at:Date.now()})}); return reply(200,{ok:true});
