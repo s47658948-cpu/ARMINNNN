@@ -289,7 +289,7 @@ export async function handler(event) {
       return reply(200,{ok:true});
     }
 
-    if (!checkToken(event)) return reply(401, { ok: false, error: "دسترسی مدیریت لازم است." });
+    if (!checkToken(event) && action !== "ticket-reply") return reply(401, { ok: false, error: "دسترسی مدیریت لازم است." });
 
     if (event.httpMethod === "GET" && action === "requests") return reply(200, { ok: true, requests: await getRequestsFor() });
 
