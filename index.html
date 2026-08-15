@@ -785,22 +785,6 @@ function updateTicketCooldown(button){
   button.disabled=left>0; button.textContent=left>0?`ارسال مجدد تا ${left} ثانیه`:'ارسال تیکت';
   if(left>0) setTimeout(()=>updateTicketCooldown(button),1000);
 }
-async function replyOwnTicket(id){
-  const text=prompt("پیام برای مدیریت:");
-  if(!text || !text.trim()) return;
-  try{
-    await yankerApi("ticket-reply","POST",{
-      id,
-      message:text.trim(),
-      username:STATE.user.username
-    });
-    await refreshTickets();
-    render();
-  }catch(e){
-    alert(e.message);
-  }
-}
-
 async function closeOwnTicket(id){
   if(!confirm("این تیکت بسته شود؟ پیام‌ها و سابقه گفتگو حفظ می‌شوند.")) return;
   try{ await yankerApi("ticket-close-own","POST",{id,username:STATE.user.username}); await refreshTickets(); render(); }catch(e){ alert(e.message); }
@@ -808,6 +792,16 @@ async function closeOwnTicket(id){
 async function replyTicket(id){
   const text=prompt("پاسخ مدیریت:"); if(!text || !text.trim()) return;
   try{ await yankerApi("ticket-reply","POST",{id,message:text.trim()}); await loadTicketsAdmin(); render(); }catch(e){ alert(e.message); }
+}
+async function sendOwnTicketReply(id){
+  const box=document.getElementById("user-ticket-reply-"+id);
+  const message=(box?.value||"").trim();
+  if(!message) return;
+  try{
+    await yankerApi("ticket-reply","POST",{id,message});
+    await refreshTickets();
+    render();
+  }catch(e){ alert(e.message); }
 }
 async function closeTicket(id){
   try{ await yankerApi("ticket-close","POST",{id}); await loadTicketsAdmin(); render(); }catch(e){ alert(e.message); }
@@ -1594,12 +1588,7 @@ function ticketCard(t){
   return `<div class="ticket-card ${t.status==='answered'?'is-answered':''} ${t.status==='closed'?'is-closed':''}">
     <div class="ticket-card-top"><div><div class="ticket-subject">${esc(t.subject)}</div><div class="hint">${fmtDate(t.createdAt)}</div></div><span class="ticket-status ${t.status}">${t.status==='closed'?'بسته':t.status==='answered'?'پاسخ مدیریت':'در انتظار پاسخ'}</span></div>
     <div class="ticket-thread">${t.messages.map(m=>`<div class="ticket-message ${m.sender==='admin'?'from-admin':'from-user'}"><div class="ticket-avatar">${m.sender==='admin'?'Y':'شما'}</div><div class="ticket-bubble"><div class="ticket-meta"><b>${esc(m.sender==='admin'?'مدیریت':m.senderName)}</b><small>${fmtDate(m.createdAt)}</small></div><div>${esc(m.body)}</div></div></div>`).join('')}</div>
-    ${t.status!=='closed'?`
-      <div class="ticket-actions">
-        <button class="btn btn-sm btn-primary" onclick="replyOwnTicket('${t.id}')">ارسال پیام به مدیریت</button>
-        <button class="btn btn-sm btn-ghost" onclick="closeOwnTicket('${t.id}')">✓ بستن تیکت</button>
-      </div>
-    `:`<span class="hint">این تیکت بسته شده؛ پیام‌ها و سابقه گفتگو حفظ شده‌اند.</span>`}
+    ${t.status!=='closed'?`<div class="user-ticket-reply"><textarea id="user-ticket-reply-${t.id}" placeholder="پیام جدید برای مدیریت..."></textarea><button class="btn btn-primary btn-sm" onclick="sendOwnTicketReply('${t.id}')">ارسال پیام</button></div><button class="btn btn-sm btn-ghost" onclick="closeOwnTicket('${t.id}')">✓ بستن تیکت</button>`:`<span class="hint">این تیکت بسته شده؛ پیام‌ها و سابقه گفتگو حفظ شده‌اند.</span>`}
   </div>`;
 }
 
@@ -2052,6 +2041,7 @@ function demoBanner(){
 </script>
 
 <style id="ticket-css">
+.user-ticket-reply{display:flex;gap:10px;align-items:flex-end;margin:12px 0}.user-ticket-reply textarea{flex:1;min-height:70px;background:rgba(5,10,22,.7);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:10px;resize:vertical}@media(max-width:640px){.user-ticket-reply{flex-direction:column}.user-ticket-reply button{width:100%}}
 .ticket-page{padding-bottom:70px}.ticket-hero{display:flex;justify-content:space-between;align-items:center;gap:30px;padding-top:52px;padding-bottom:30px}.ticket-title{font-size:42px;margin:4px 0 10px}.ticket-subtitle{color:var(--text-dim);max-width:650px;line-height:1.9}.ticket-orb{width:110px;height:110px;border-radius:30px;border:1px solid var(--border-strong);background:radial-gradient(circle at 30% 20%,rgba(96,140,255,.25),rgba(8,13,27,.9));display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:34px;box-shadow:0 20px 60px rgba(47,91,255,.18)}.ticket-orb span{font-size:9px;letter-spacing:3px;color:var(--text-faint);margin-top:6px}.ticket-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}.ticket-stat{padding:18px;border:1px solid var(--border);background:rgba(15,23,39,.72);border-radius:18px}.ticket-stat b{font-size:25px;display:block}.ticket-stat span{font-size:12px;color:var(--text-faint)}.ticket-layout{display:grid;grid-template-columns:.82fr 1.18fr;gap:18px;align-items:start}.ticket-compose{position:sticky;top:90px}.ticket-section-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}.ticket-section-head h3{margin:2px 0 0;font-size:20px}.ticket-kicker{font-size:10px;letter-spacing:2.5px;color:var(--blue-3);font-weight:700}.ticket-icon{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:rgba(47,91,255,.12);border:1px solid var(--border-strong)}.ticket-form{display:grid;gap:14px;margin-top:18px}.ticket-form label{display:grid;gap:7px;color:var(--text-dim);font-size:13px}.ticket-form input,.ticket-form textarea{width:100%;background:rgba(5,10,22,.7);color:var(--text);border:1px solid var(--border);border-radius:13px;padding:12px 14px;outline:none}.ticket-form textarea{min-height:180px;resize:vertical;line-height:1.8}.ticket-form input:focus,.ticket-form textarea:focus{border-color:var(--blue-3);box-shadow:0 0 0 3px rgba(47,91,255,.1)}.ticket-form-foot{display:grid;gap:10px}.ticket-note{font-size:11px;color:var(--text-faint);line-height:1.7}.ticket-submit{width:100%}.ticket-list{min-width:0}.ticket-card{background:linear-gradient(180deg,rgba(16,24,41,.92),rgba(8,13,24,.92));border:1px solid var(--border);border-radius:20px;padding:18px;margin-bottom:12px;box-shadow:0 16px 50px rgba(0,0,0,.18)}.ticket-card.is-answered{border-color:rgba(49,226,160,.25)}.ticket-card.is-closed{opacity:.75}.ticket-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.ticket-subject{font-weight:700;font-size:16px;margin-bottom:5px}.ticket-status{font-size:11px;padding:6px 10px;border-radius:999px;white-space:nowrap}.ticket-status.open{background:rgba(255,190,60,.1);color:#ffd56a}.ticket-status.answered{background:rgba(49,226,160,.1);color:#9df5d3}.ticket-status.closed{background:rgba(255,92,124,.1);color:#ffb3c2}.ticket-thread{display:grid;gap:10px;margin:16px 0}.ticket-message{display:flex;gap:9px;align-items:flex-start}.ticket-message.from-admin{flex-direction:row-reverse}.ticket-avatar{width:30px;height:30px;flex:0 0 30px;border-radius:10px;display:grid;place-items:center;font-size:9px;font-weight:700;background:rgba(96,140,255,.12);border:1px solid var(--border-strong);color:var(--blue-3)}.from-admin .ticket-avatar{background:rgba(49,226,160,.1);color:#9df5d3}.ticket-bubble{max-width:85%;padding:11px 13px;border-radius:14px;background:rgba(255,255,255,.035);border:1px solid var(--border);line-height:1.8;font-size:13px}.from-admin .ticket-bubble{background:rgba(49,226,160,.045);border-color:rgba(49,226,160,.18)}.ticket-meta{display:flex;justify-content:space-between;gap:15px;margin-bottom:5px}.ticket-meta small{color:var(--text-faint);font-size:9px}.ticket-empty{text-align:center;padding:50px 20px;border:1px dashed var(--border-strong);border-radius:20px;background:rgba(10,16,28,.5)}.ticket-empty-icon{font-size:35px;color:var(--blue-3);margin-bottom:10px}@media(max-width:900px){.ticket-layout{grid-template-columns:1fr}.ticket-compose{position:static}.ticket-stats{grid-template-columns:repeat(2,1fr)}.ticket-hero{padding-top:30px}.ticket-title{font-size:32px}}
 </style>
 <style id="admin-ticket-polish-css">
