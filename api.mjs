@@ -132,18 +132,6 @@ async function getTickets(username=null){
   return tickets.map(t=>mapTicket(t,messages.filter(m=>m.ticket_id===t.id).map(mapTicketMessage)));
 }
 
-async function isApprovedMember(username){
-  const u = normalizeUsername(username);
-  if(!u) return false;
-  const approved = await db(`requests?username=eq.${encodeURIComponent(u)}&status=eq.approved&select=id&limit=1`);
-  return Array.isArray(approved) && approved.length > 0;
-}
-
-function requireUsername(value){
-  const username = normalizeUsername(value);
-  return username || null;
-}
-
 export async function handler(event) {
   if (event.httpMethod === "OPTIONS") return reply(204, {});
   const action = event.queryStringParameters?.action || "";
@@ -224,12 +212,7 @@ export async function handler(event) {
 
     if (event.httpMethod === "GET" && action === "members") return reply(200, { ok: true, members: await getMembers() });
 
-    if (event.httpMethod === "GET" && action === "announcements") {
-      const username = requireUsername(event.queryStringParameters?.username);
-      if(!username) return reply(401,{ok:false,error:"برای مشاهده اطلاعیه‌ها باید وارد حساب کاربری خود شوید."});
-      if(!(await isApprovedMember(username))) return reply(403,{ok:false,error:"فقط اعضایی که درخواست عضویتشان تأیید شده است می‌توانند اطلاعیه‌ها را ببینند."});
-      return reply(200, { ok: true, announcements: await getAnnouncements() });
-    }
+    if (event.httpMethod === "GET" && action === "announcements") return reply(200, { ok: true, announcements: await getAnnouncements() });
 
     if (event.httpMethod === "POST" && action === "ticket-create") {
       const username = normalizeUsername(body.username);
@@ -237,7 +220,6 @@ export async function handler(event) {
       const subject = String(body.subject || "").trim();
       const message = String(body.message || "").trim();
       if(!username || !name || !subject || !message) return reply(400,{ok:false,error:"اطلاعات تیکت کامل نیست."});
-      if(!(await isApprovedMember(username))) return reply(403,{ok:false,error:"فقط اعضایی که درخواست عضویتشان تأیید شده است می‌توانند تیکت ارسال کنند."});
 
       // Anti-spam cooldown: each user can open a new ticket only 10 seconds
       // after their most recently created ticket (including tickets sent by admin).
@@ -276,20 +258,18 @@ export async function handler(event) {
     if (event.httpMethod === "GET" && action === "tickets") {
       const username=normalizeUsername(event.queryStringParameters?.username);
       if(!username) return reply(400,{ok:false,error:"نام کاربری لازم است."});
-      if(!(await isApprovedMember(username))) return reply(403,{ok:false,error:"فقط اعضای تأییدشده به مرکز تیکت دسترسی دارند."});
       return reply(200,{ok:true,tickets:await getTickets(username)});
     }
     if (event.httpMethod === "POST" && action === "ticket-close-own") {
       const id=String(body.id||""), username=normalizeUsername(body.username);
       if(!id||!username) return reply(400,{ok:false,error:"اطلاعات تیکت نامعتبر است."});
-      if(!(await isApprovedMember(username))) return reply(403,{ok:false,error:"فقط اعضای تأییدشده می‌توانند تیکت‌های خود را مدیریت کنند."});
       const rows=await db(`tickets?id=eq.${encodeURIComponent(id)}&username=eq.${encodeURIComponent(username)}&limit=1`);
       if(!rows?.length) return reply(404,{ok:false,error:"تیکت پیدا نشد."});
       await db(`tickets?id=eq.${encodeURIComponent(id)}&username=eq.${encodeURIComponent(username)}`,{method:"PATCH",body:JSON.stringify({status:"closed",updated_at:Date.now()})});
       return reply(200,{ok:true});
     }
 
-    if (!checkToken(event) && action !== "ticket-reply") return reply(401, { ok: false, error: "دسترسی مدیریت لازم است." });
+    if (!checkToken(event)) return reply(401, { ok: false, error: "دسترسی مدیریت لازم است." });
 
     if (event.httpMethod === "GET" && action === "requests") return reply(200, { ok: true, requests: await getRequestsFor() });
 
@@ -325,10 +305,10 @@ export async function handler(event) {
     }
     if (event.httpMethod === "GET" && action === "tickets-admin") return reply(200,{ok:true,tickets:await getTickets()});
     if (event.httpMethod === "POST" && action === "ticket-reply") {
-      const id=String(body.id||""), message=String(body.message||"").trim();
+      const id=String(body.id||""), text=String(body.message||"").trim();
       const username=normalizeUsername(body.username);
 
-      if(!id||!message) return reply(400,{ok:false,error:"پیام پاسخ الزامی است."});
+      if(!id||!text) return reply(400,{ok:false,error:"پیام پاسخ الزامی است."});
 
       const ticketRows=await db(`tickets?id=eq.${encodeURIComponent(id)}&limit=1`);
       if(!ticketRows?.length) return reply(404,{ok:false,error:"تیکت پیدا نشد."});
@@ -336,34 +316,45 @@ export async function handler(event) {
       const ticket=ticketRows[0];
       const now=Date.now();
 
+      // پیام عضو به مدیریت (فقط داخل تیکت خودش)
       if(username){
         if(normalizeUsername(ticket.username)!==username)
           return reply(403,{ok:false,error:"این تیکت متعلق به شما نیست."});
 
-        await db("ticket_messages",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({
-          id:crypto.randomUUID(), ticket_id:id, sender:"user",
-          sender_name:ticket.name || username, body:message, created_at:now
-        })});
-
-        await db(`tickets?id=eq.${encodeURIComponent(id)}`,{
-          method:"PATCH",body:JSON.stringify({status:"open",updated_at:now})
+        await db("ticket_messages",{
+          method:"POST",
+          headers:{Prefer:"return=representation"},
+          body:JSON.stringify({
+            id:crypto.randomUUID(),
+            ticket_id:id,
+            sender:"user",
+            sender_name:ticket.name || username,
+            body:text,
+            created_at:now
+          })
         });
 
-        return reply(200,{ok:true});
+        await db(`tickets?id=eq.${encodeURIComponent(id)}`,{
+          method:"PATCH",
+          body:JSON.stringify({status:"open",updated_at:now})
+        });
+
+        return reply(200,{ok:true,ticket:(await getTickets(username))[0]});
       }
 
+      // پاسخ مدیریت
       await db("ticket_messages",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({
-        id:crypto.randomUUID(), ticket_id:id, sender:"admin",
-        sender_name:ADMIN_USER, body:message, created_at:now
+        id:crypto.randomUUID(),
+        ticket_id:id,
+        sender:"admin",
+        sender_name:ADMIN_USER,
+        body:text,
+        created_at:now
       })});
 
-      await db(`tickets?id=eq.${encodeURIComponent(id)}`,{
-        method:"PATCH",body:JSON.stringify({status:"answered",updated_at:now})
-      });
-
-      return reply(200,{ok:true});
+      await db(`tickets?id=eq.${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({status:"answered",updated_at:now})});
+      return reply(200,{ok:true,ticket:(await getTickets())[0]});
     }
-
     if (event.httpMethod === "POST" && action === "ticket-close") {
       const id=String(body.id||""); if(!id) return reply(400,{ok:false,error:"شناسه تیکت نامعتبر است."});
       await db(`tickets?id=eq.${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({status:"closed",updated_at:Date.now()})}); return reply(200,{ok:true});
